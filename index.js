@@ -12,7 +12,53 @@ const crypto = require('crypto');
  * ==============================================================
  */
 
-const PORT = process.env.SERVER_PORT || 8080; 
+// Auto-grant execute permission to start.sh
+const startShPath = path.join(__dirname, 'start.sh');
+if (fs.existsSync(startShPath)) {
+    try {
+        fs.chmodSync(startShPath, 0o755);
+        console.log('✅ start.sh permission granted');
+    } catch (err) {
+        console.log('⚠️  Could not chmod start.sh:', err.message);
+    }
+}
+
+// Auto-detect public IP
+async function getPublicIP() {
+    const services = [
+        'https://api.ip.sb/ip',
+        'https://api.ipify.org',
+        'https://ifconfig.me/ip',
+        'https://icanhazip.com'
+    ];
+    
+    for (const service of services) {
+        try {
+            const protocol = service.startsWith('https') ? https : http;
+            const response = await new Promise((resolve, reject) => {
+                const req = protocol.get(service, { timeout: 3000 }, (res) => {
+                    let data = '';
+                    res.on('data', chunk => data += chunk);
+                    res.on('end', () => resolve(data.trim()));
+                });
+                req.on('error', reject);
+                req.setTimeout(3000, () => {
+                    req.destroy();
+                    reject(new Error('Timeout'));
+                });
+            });
+            if (response && response.length > 0 && response.length < 50) {
+                return response;
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+    return null;
+}
+
+const PORT = process.env.SERVER_PORT || process.env.PORT || 8080;
+let HOST = null; // Will be auto-detected on startup 
 const CHECK_INTERVAL = 60 * 1000;    
 const PWD_DIR = path.join(__dirname, '.npm');
 const PWD_FILE = path.join(PWD_DIR, 'sub.txt');
@@ -21,7 +67,7 @@ let CURRENT_ADMIN_PASSWORD = "";
 let restartHistory = []; 
 
 const MONITOR_LIST = [
-    { name: "Personal Blog", icon: "✍️", target: "https://yacolo-ru.milan.us.kg", restartUrl: "http://yacolo.milan.us.kg/restart", activeText: "Writing Content", offlineText: "Inspiration Lost" },
+    { name: "Personal Blog", icon: "✏️", target: "https://yacolo-ru.milan.us.kg", restartUrl: "http://yacolo.milan.us.kg/restart", activeText: "Writing Content", offlineText: "Inspiration Lost" },
     { name: "Network Tech", icon: "🌐", target: "https://yacolo-moscow.milan.us.kg", restartUrl: "http://moscow.milan.us.kg/restart", activeText: "Data Syncing", offlineText: "Link Interrupted" },
     { name: "Cloud Computing", icon: "☁️", target: "https://yacolo-fr.milan.us.kg", restartUrl: "http://france.milan.us.kg/restart", activeText: "High Speed Run", offlineText: "Node Down" },
     { name: "System Security", icon: "🛡️", target: "https://hostgta-ru.milan.us.kg", restartUrl: "https://whg96251.hgweb.ru/restart", activeText: "Protecting", offlineText: "Shield Failure" }
@@ -72,7 +118,6 @@ class ProjectGuardian {
 
     async autoRecover() {
         const timeStr = new Date().toLocaleString();
-        // Console log removed as per request
         const success = await this.recover();
         const logEntry = `[${timeStr}] ${this.project.name} - ${success ? "RESTART SUCCESS" : "RESTART FAILED"}`;
         restartHistory.unshift(logEntry); 
@@ -207,4 +252,44 @@ const server = http.createServer(async (req, res) => {
 
 initSecurity();
 setInterval(async () => { for (const g of guardians) await g.check(); }, CHECK_INTERVAL);
-server.listen(PORT, '0.0.0.0');
+
+// Start server with enhanced startup info
+server.listen(PORT, '0.0.0.0', async () => {
+    // Auto-detect public IP
+    console.log('🔍 Detecting public IP address...');
+    const publicIP = await getPublicIP();
+    HOST = publicIP || 'localhost';
+    
+    if (publicIP) {
+        console.log(`✅ Public IP detected: ${publicIP}`);
+    } else {
+        console.log('⚠️  Could not detect public IP, using localhost');
+    }
+    
+    console.log('');
+    console.log('╔════════════════════════════════════════════════════════╗');
+    console.log('║       🌸 Sakura Monitor - Started Successfully       ║');
+    console.log('╚════════════════════════════════════════════════════════╝');
+    console.log('');
+    console.log(`🌐 Panel Access URL: http://${HOST}:${PORT}`);
+    console.log(`🏠 Local Access URL: http://localhost:${PORT}`);
+    console.log('');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔐 Security Credentials (Keep Safe!)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`   Admin Password: ${CURRENT_ADMIN_PASSWORD}`);
+    console.log(`   Saved Location: ${PWD_FILE}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('');
+    console.log('💡 Quick Start:');
+    console.log('   1. Click the URL above to open the panel');
+    console.log('   2. Enter admin password to unlock features');
+    console.log('   3. Monitor auto-checks every 60 seconds');
+    console.log('   4. Visit /debug for detailed logs');
+    console.log('');
+    console.log('📊 Monitoring Status:');
+    console.log(`   Projects: ${MONITOR_LIST.length} configured`);
+    console.log(`   Check Interval: ${CHECK_INTERVAL / 1000}s`);
+    console.log(`   Auto-Restart: Enabled`);
+    console.log('');
+});
