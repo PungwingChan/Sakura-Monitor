@@ -10,11 +10,7 @@
   "scripts": {
     "start": "node index.js"
   },
-  "dependencies": {
-    "axios": "latest",
-    "dotenv": "latest",
-    "express": "latest"
-  },
+  "dependencies": {},
   "engines": {
     "node": ">=14"
   }
